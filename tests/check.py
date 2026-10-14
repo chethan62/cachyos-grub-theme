@@ -176,6 +176,19 @@ def main() -> int:
         check("'${title_menu}' --class snapshots" not in snaps,
               "the stray class on the inner submenu is reverted")
 
+    print("\n== /etc/grub.d sanity (grub-mkconfig runs every executable [0-9][0-9]_* file) ==")
+    # A backup left in that directory is itself a menu generator: "12_windows.bak" produced a second
+    # "Windows 11" entry in the real menu. Flag backup-looking names only, so a stock /etc/grub.d on a
+    # plain machine still passes.
+    grubd = pathlib.Path("/etc/grub.d")
+    if not grubd.is_dir():
+        print("     (no /etc/grub.d on this machine — skipped)")
+    else:
+        strays = sorted(p.name for p in grubd.glob("[0-9][0-9]_*")
+                        if re.search(r"(\.bak|~$|\.old|\.orig|\.save|\.dpkg-)", p.name))
+        check(not strays, "no backup-looking file in /etc/grub.d (each one generates a duplicate entry)",
+              ", ".join(strays) if strays else "")
+
     print()
     if failures:
         print(f"{len(failures)} check(s) failed: {'; '.join(failures)}")

@@ -70,11 +70,22 @@ if [ ! -f /etc/grub.d/12_windows ]; then
 elif cmp -s "$INST/12_windows" /etc/grub.d/12_windows; then
   echo "12_windows already current"
 else
-  # an older revision lacked the --class that lets the row resolve an icon
-  cp -f /etc/grub.d/12_windows /etc/grub.d/12_windows.bak
+  # an older revision lacked the --class that lets the row resolve an icon. Back it up OUTSIDE
+  # /etc/grub.d: a backup in there is itself a menu generator (grub-mkconfig runs every executable
+  # file matching [0-9][0-9]_*, so "12_windows.bak" produced a SECOND "Windows 11" entry).
+  mkdir -p /var/backups/cachyos-grub-theme
+  cp -f /etc/grub.d/12_windows /var/backups/cachyos-grub-theme/12_windows.bak
   install -m755 "$INST/12_windows" /etc/grub.d/12_windows
-  echo "12_windows refreshed (previous copy kept as 12_windows.bak — restore it if you had edited the UUID)"
+  echo "12_windows refreshed (previous copy kept at /var/backups/cachyos-grub-theme/12_windows.bak)"
 fi
+# Migrate any backup an earlier revision left inside /etc/grub.d — each one is a duplicate entry.
+for stray in /etc/grub.d/*.bak /etc/grub.d/*~ /etc/grub.d/*.old /etc/grub.d/*.orig /etc/grub.d/*.save; do
+  [ -e "$stray" ] || continue
+  case "$(basename "$stray")" in [0-9][0-9]_*) ;; *) continue ;; esac
+  mkdir -p /var/backups/cachyos-grub-theme
+  mv -f "$stray" "/var/backups/cachyos-grub-theme/$(basename "$stray")"
+  echo "moved stray $(basename "$stray") out of /etc/grub.d — it was generating an extra menu entry"
+done
 # ESP UUIDs are XXXX-XXXX; match that shape rather than the text after the option, which is
 # `--set=root` on the preceding token (a greedy match happily returns "--")
 WIN_UUID=$(grep -oiE '[0-9a-f]{4}-[0-9a-f]{4}' /etc/grub.d/12_windows | head -1)
@@ -204,4 +215,17 @@ for pair in "CachyOS Linux:cachyos" "Advanced:linux" "Windows 11:windows11" "UEF
     "$(grep -c -- "--class $cls" /boot/grub/grub.cfg)" \
     "$([ -f "$T/icons/$cls.png" ] && echo yes || echo MISSING)"
 done
+echo "duplicate-entry audit (grub-mkconfig runs every executable [0-9][0-9]_* file in /etc/grub.d):"
+for f in /etc/grub.d/[0-9][0-9]_*; do
+  case "$(basename "$f")" in
+    *.bak|*~|*.old|*.orig|*.save|*.dpkg-*)
+      echo "  STRAY $(basename "$f") — a backup in this directory generates its own menu entry";;
+  esac
+done
+WIN_ENTRIES=0
+for f in /etc/grub.d/[0-9][0-9]_*; do
+  [ -x "$f" ] || continue
+  WIN_ENTRIES=$((WIN_ENTRIES + $(bash "$f" 2>/dev/null | grep -c "menuentry 'Windows")))
+done
+echo "  Windows entries the generators produce: $WIN_ENTRIES (must be 1)"
 echo "Reboot to see it on the panel — that is the one step this cannot do for you."
