@@ -74,6 +74,34 @@ regenerates `grub.cfg`.
 hardcodes the author's Windows ESP filesystem UUID (`F0E7-FD1E`) and `finish-theme.sh` writes to
 `/etc/default/grub`. Change the UUID for your own disk (`lsblk -o NAME,FSTYPE,UUID`) before running it.
 
+What a successful run looks like, in order:
+
+```
+== 1/5 ... 12_windows already current            (or "refreshed", or "moved stray …")
+== 2/5 ... cachyos-pro assets rebuilt
+== 3/5 ... GRUB_THEME='…/cachyos-pro/theme.txt'  grub.cfg syntax OK — installed
+== 4/5 ... render-*.png frames (a refusal here means nothing was changed)
+== 5/5 ... installed theme matches the sources   generated cfg: classes=[…] markers 1/1 saved_entry 4
+          icon resolution      → 5 rows, all icon=yes
+          duplicate-entry audit → Windows entries the generators produce: 1 (must be 1)
+```
+
+Any line reading `MISSING`, `STRAY`, `DRIFT`, `icon=MISSING`, or a count that is not `1` is a real
+problem, and the line itself names the file to look at. Nothing is written to `grub.cfg` until the
+generated config has passed `grub-script-check`.
+
+### From scratch, on a different machine
+
+```bash
+git clone https://github.com/chethan62/cachyos-grub-theme && cd cachyos-grub-theme
+lsblk -o NAME,FSTYPE,UUID | grep -i vfat     # find YOUR Windows ESP UUID
+$EDITOR install/12_windows                   # put it in the fs-uuid line
+sudo bash install/finish-theme.sh            # then reboot
+```
+
+The installer refuses to guess: if the UUID in `12_windows` is not on the machine it says so and tells
+you how to list them. Anything it replaces is backed up to `/var/backups/cachyos-grub-theme/`.
+
 Revert — dry run first, then apply:
 
 ```bash
