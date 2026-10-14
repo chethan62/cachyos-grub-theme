@@ -8,5 +8,7 @@ theme/.stage/
 # render harness scratch (root-anchored so docs/screenshots/render-*.png are NOT ignored)
 /render/
 /render-*.png
+# verification frames from scripts/qemu-verify.sh
+/.verify/
 *.ppm
 *.log

@@ -89,7 +89,8 @@ sudo grub-mkconfig -o /boot/grub/grub.cfg
 | `theme/theme.txt` | the theme, with the reasoning for each measured value in comments |
 | `theme/build-assets.sh` | generates background, highlight slices, fonts and icons (idempotent) |
 | `tools/grub-menu-patches` | all `/etc/grub.d` edits, `apply` or `verify`; `GRUB_D` overridable for tests |
-| `scripts/render-theme.sh`, `scripts/test-grub.cfg` | the QEMU render harness |
+| `scripts/render-theme.sh`, `scripts/test-grub.cfg` | the QEMU render harness (standalone GRUB on a FAT image, no disk access) |
+| `scripts/qemu-verify.sh` | end-to-end check of the **installed** theme: boots the real disk read-only and screenshots the menu |
 | `install/` | this machine's installer, `12_windows`, `12_memtest`, and the pacman hook |
 | `docs/` | research notes + the GRUB theme-format reference |
 | `tests/check.py` | the checks CI runs |

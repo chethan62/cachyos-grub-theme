@@ -1,11 +1,15 @@
 #!/bin/bash
-# Finish + verify the cachyos-pro GRUB theme.   Run:   sudo bash /home/chethan/.hermes/cache/scratch/finish-theme.sh
+# Install / re-sync the cachyos-pro GRUB theme on this machine, then verify it.
+#   sudo bash install/finish-theme.sh
 #
-# Why it is needed: the agent's sudo credential stopped working mid-session, so these last
-# root writes are handed over. IMPORTANT: /etc/default/grub currently has GRUB_TIMEOUT='-1'
-# (left over from the capture runs) — step 1 puts it back to 3 seconds.
+# Idempotent: it installs the theme, restores the shipped GRUB_TIMEOUT + a GFXMODE fallback, applies
+# the /etc/grub.d patches, installs the pacman hook that re-applies them after a grub upgrade, and
+# regenerates grub.cfg — then renders the real disk in QEMU (read-only) to prove the result.
+#
+# Sources come from the repo this script lives in, so a fresh clone runs without editing paths.
 set -eu
-S=/home/chethan/.hermes/cache/scratch
+REPO=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+TH="$REPO/theme"; INST="$REPO/install"; TOOLS="$REPO/tools"; SCRIPTS="$REPO/scripts"
 T=/usr/share/grub/themes/cachyos-pro
 [ "$(id -u)" = 0 ] || { echo "run me with sudo"; exit 1; }
 
@@ -35,7 +39,7 @@ fi
 grep -E "^GRUB_BTRFS_SUBMENUNAME" /etc/default/grub-btrfs/config
 # Every /etc/grub.d edit this menu needs lives in one script (one place to read, test, re-apply):
 # the Advanced-row marker and the --class options that make the icons resolve.
-install -m755 "$S/grub-menu-patches" /usr/local/bin/grub-menu-patches
+install -m755 "$TOOLS/grub-menu-patches" /usr/local/bin/grub-menu-patches
 /usr/local/bin/grub-menu-patches apply
 # boot the last-used OS: GRUB_DEFAULT=saved + GRUB_SAVEDEFAULT=true is the supported pair
 # (grub-mkconfig exports GRUB_SAVEDEFAULT; 00_header maps saved -> ${saved_entry})
@@ -56,7 +60,23 @@ for kv in 'GRUB_BTRFS_LIMIT="10"' 'GRUB_BTRFS_IGNORE_SNAPSHOT_TYPE=("pre")'; do
   fi
 done
 grep -E "^GRUB_BTRFS_LIMIT|^GRUB_BTRFS_IGNORE_SNAPSHOT_TYPE" /etc/default/grub-btrfs/config
-install -m755 "$S/12_memtest" /etc/grub.d/12_memtest
+install -m755 "$INST/12_memtest" /etc/grub.d/12_memtest
+# Windows entry: install it only when one is missing, so a local edit (a different ESP UUID) is never
+# clobbered — and check the UUID it pins actually exists on a partition, because a stale UUID means a
+# menu entry that cannot boot Windows.
+if [ -f /etc/grub.d/12_windows ]; then
+  echo "12_windows already present — left alone"
+else
+  install -m755 "$INST/12_windows" /etc/grub.d/12_windows
+  echo "12_windows installed (check the ESP UUID matches this machine)"
+fi
+# ESP UUIDs are XXXX-XXXX; match that shape rather than the text after the option, which is
+# `--set=root` on the preceding token (a greedy match happily returns "--")
+WIN_UUID=$(grep -oiE '[0-9a-f]{4}-[0-9a-f]{4}' /etc/grub.d/12_windows | head -1)
+if [ -n "$WIN_UUID" ] && ! blkid -U "$WIN_UUID" >/dev/null 2>&1; then
+  echo "WARNING: 12_windows pins ESP UUID $WIN_UUID, which no partition on this machine has" >&2
+  echo "         (fix: lsblk -o NAME,FSTYPE,UUID | grep -i vfat)" >&2
+fi
 # every /etc/grub.d edit is on a package-owned file, so it is re-applied after every grub upgrade by
 # the same hook that keeps 31_efi_bootnext disabled — the patches live in one script, not in here
 cat > /etc/pacman.d/hooks/31-efi-bootnext-off.hook <<'HOOK'
@@ -72,8 +92,8 @@ When = PostTransaction
 Exec = /bin/sh -c "chmod -x /etc/grub.d/31_efi_bootnext; /usr/local/bin/grub-menu-patches apply; grub-mkconfig -o /boot/grub/grub.cfg >/dev/null 2>&1"
 HOOK
 echo "hook rewritten:"; grep -c "grub-menu-patches apply" /etc/pacman.d/hooks/31-efi-bootnext-off.hook
-install -m755 "$S/build-assets.sh" "$T/build-assets.sh"
-install -m644 "$S/theme.txt" "$T/theme.txt"
+install -m755 "$TH/build-assets.sh" "$T/build-assets.sh"
+install -m644 "$TH/theme.txt" "$T/theme.txt"
 rm -f "$T"/cantarell_bold_40.pf2 "$T"/cantarell_bold_24.pf2 "$T"/cantarell_regular_17.pf2 "$T"/cantarell_regular_15.pf2 "$T"/terminal_box_*.png
 
 echo "== 2/5 rebuild generated assets (background, highlight slices, fonts)"
@@ -123,10 +143,30 @@ printf "%s submenus, %s pre-type left, memtest entry=%s\n" \
 echo -n "saved-default wiring: "; grep -c 'saved_entry' /boot/grub/grub.cfg
 sync
 
-echo "== 4/5 on-screen verification in QEMU (needs ~45 s; disk attached read-only)"
-bash "$S/qemu-verify.sh"
+echo "== 4/5 on-screen verification in QEMU (real disk, read-only overlay)"
+VERIFY_DIR="$REPO/.verify" bash "$SCRIPTS/qemu-verify.sh"
 
 echo "== 5/5 final state"
 grep -m1 "set timeout=" /boot/grub/grub.cfg
 ls "$T" | tr '\n' ' '; echo
 echo "theme files: $(ls "$T" | wc -l)"
+# Does the installed theme match the sources just installed? An older run leaves a stale
+# build-assets.sh behind; and the icons are re-encoded each build, so compare their geometry rather
+# than their bytes (identical artwork can hash differently).
+drift=0
+for f in theme.txt build-assets.sh background.png; do
+  cmp -s "$TH/$f" "$T/$f" || { echo "  DRIFT: $f differs from the source"; drift=1; }
+done
+for c in cachyos linux windows11 efi snapshots; do
+  a=$(magick "$T/icons/$c.png" -trim -format '%wx%h' info: 2>/dev/null)
+  b=$(magick "$TH/icons/$c.png" -trim -format '%wx%h' info: 2>/dev/null)
+  [ "$a" = "$b" ] || { echo "  DRIFT: icon $c installed=$a source=$b"; drift=1; }
+done
+[ "$drift" = 0 ] && echo "installed theme matches the sources (theme.txt, builder, background, 5 icons)"
+# grub.cfg is root-only, so this is the only place the generated menu can be inspected
+printf "generated cfg: classes=[%s] markers adv/snap=%s/%s saved_entry refs=%s\n" \
+  "$(grep -o -- '--class [a-z0-9-]*' /boot/grub/grub.cfg | awk '{print $2}' | sort -u | tr '\n' ' ')" \
+  "$(grep -c 'Advanced options for CachyOS Linux  ▶' /boot/grub/grub.cfg)" \
+  "$(grep -c 'CachyOS Linux snapshots  ▶' /boot/grub/grub.cfg)" \
+  "$(grep -c 'saved_entry' /boot/grub/grub.cfg)"
+echo "Reboot to see it on the panel — that is the one step this cannot do for you."
