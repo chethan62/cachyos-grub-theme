@@ -94,7 +94,7 @@ Target = grub
 [Action]
 Description = Re-disabling 31_efi_bootnext, re-applying the boot-menu patches, regenerating grub.cfg...
 When = PostTransaction
-Exec = /bin/sh -c "chmod -x /etc/grub.d/31_efi_bootnext; /usr/local/bin/grub-menu-patches apply; grub-mkconfig -o /boot/grub/grub.cfg >/dev/null 2>&1"
+Exec = /bin/sh -c "chmod -x /etc/grub.d/31_efi_bootnext; /usr/local/bin/grub-menu-patches apply; [ -f /usr/share/grub/themes/cachyos-pro/theme.txt ] || sed -i 's|^GRUB_THEME=.*|#GRUB_THEME= disabled (theme.txt missing)|' /etc/default/grub; grub-mkconfig -o /boot/grub/grub.cfg >/dev/null 2>&1"
 HOOK
 echo "hook rewritten:"; grep -c "grub-menu-patches apply" /etc/pacman.d/hooks/31-efi-bootnext-off.hook
 install -m755 "$TH/build-assets.sh" "$T/build-assets.sh"
@@ -105,6 +105,18 @@ echo "== 2/5 rebuild generated assets (background, highlight slices, fonts)"
 "$T/build-assets.sh"
 
 echo "== 3/5 regenerate grub.cfg"
+# GRUB_THEME is set when the theme is really there, and UNSET when it is not. This is not cosmetic:
+# a missing theme file is NOT a graceful fallback in GRUB 2.16 — it prints one error line and waits at
+# "Press any key to continue..." with no menu at all (measured; see docs/screenshots/render-no-theme.png),
+# which is a hang on a machine nobody is sitting at. With no theme set, GRUB draws its built-in menu
+# with every entry listed (also measured — docs/screenshots/render-plain-menu.png).
+if [ -f "$T/theme.txt" ]; then
+  sed -i "s|^#\?GRUB_THEME=.*|GRUB_THEME='$T/theme.txt'|" /etc/default/grub
+else
+  echo "WARNING: $T/theme.txt is missing — disabling GRUB_THEME so GRUB falls back to its built-in menu" >&2
+  sed -i "s|^GRUB_THEME=.*|#GRUB_THEME= disabled (theme.txt missing)|" /etc/default/grub
+fi
+grep -E "^#?GRUB_THEME=" /etc/default/grub
 grep -E "^GRUB_TIMEOUT=|^GRUB_GFXMODE=|^GRUB_THEME=|^GRUB_DISABLE_OS_PROBER=" /etc/default/grub
 # generate to a temp file and syntax-check BEFORE replacing the live config: a boot config that GRUB
 # cannot parse is the one way this could leave the machine worse off than it found it.

@@ -83,15 +83,23 @@ sudo bash install/rollback.sh --apply   # restores the stock theme + stock /etc/
 
 ## If the theme does not display
 
-**A theme failure degrades, it never bricks.** GRUB drops back to its plain text menu, and every
-kernel and the Windows entry still boot. This repo writes only `/etc`, `/usr/share/grub/themes` and
-`/boot/grub/grub.cfg` — never the ESP or the firmware — so even an unparseable config leaves you at
-GRUB's own prompt, not at an unbootable machine. Worst realistic case: a text menu, a missing icon, or
-the wrong default entry.
+**Measured, not assumed** — both frames below were rendered by `scripts/render-theme.sh` against an
+image the machine would boot from, and both are committed in `docs/screenshots/`:
+
+| State | What actually happens |
+|---|---|
+| `GRUB_THEME` points at a **missing file** | One `error: file … not found` line and **"Press any key to continue…"** — **no menu, no entries at all** (`render-no-theme.png`). Modifier keys do not dismiss it (measured: three Shift presses left it unchanged); a real key does. On an unattended machine this **hangs the boot**. |
+| **No `GRUB_THEME` at all** | GRUB's built-in menu with every entry listed, the first highlighted, and its countdown (`render-plain-menu.png`). This is the graceful state. |
+
+So `install/finish-theme.sh` — and the pacman hook after a grub upgrade — now **unsets** `GRUB_THEME`
+when `theme.txt` is missing, rather than leaving a config that stops at a prompt. Re-running the
+installer restores the theme. Nothing here writes to the ESP or the firmware, so the firmware boot
+menu and its `EFI Hard Drive` fallback are always still there.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Plain text menu, no theme | theme load failed: missing `background.png` (fatal), a font name that does not resolve, or a typo in a *global* property | rebuild with `theme/build-assets.sh`; confirm the font names with `grub-mkfont` (never `-n`); check the path in `GRUB_THEME` |
+| Stops at `Press any key to continue…` | `GRUB_THEME` names a file that is not there | press a key to get the built-in menu, then re-run `install/finish-theme.sh` (or set `GRUB_THEME` to the stock `/usr/share/grub/themes/cachyos/theme.txt`) |
+| Plain menu, no theme, no error | theme not applied: a font name that does not resolve, or a typo in a *global* property | rebuild with `theme/build-assets.sh`; confirm font names with `grub-mkfont` (never `-n`); check `GRUB_THEME` |
 | Icons missing, or uneven sizes on some rows | a `/etc/grub.d` patch lost (grub upgraded without the hook), or `grub.cfg` not regenerated afterwards | `grub-menu-patches verify`, then `sudo grub-mkconfig -o /boot/grub/grub.cfg` |
 | Menu appears but the countdown never ends | `GRUB_TIMEOUT` is `-1` (the capture phases set that) | `sudo sed -i "s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT='3'/" /etc/default/grub && sudo grub-mkconfig -o /boot/grub/grub.cfg` |
 | Boots the other OS by default | `GRUB_DEFAULT=saved` remembers the last boot | `sudo grub-editenv /boot/grub/grubenv unset saved_entry` (or set `GRUB_DEFAULT=0`) |

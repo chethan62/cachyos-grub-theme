@@ -1,36 +1,48 @@
 #!/bin/bash
-# Root-free GRUB theme render: standalone GRUB (embedded test cfg) on a FAT image that also
-# carries the live theme, booted under OVMF with KVM. No raw disk, no sudo, no reboot.
-#   screenshots: render-countdown.png (menu + live countdown), render-held.png (highlight)
+# Root-free GRUB theme render: standalone GRUB (embedded test cfg) on a FAT image carrying the current
+# theme, booted under OVMF with KVM. No raw disk, no sudo, no reboot.
+#   bash scripts/render-theme.sh                                   # scripts/test-grub.cfg
+#   CFG=scripts/test-grub-no-theme.cfg bash scripts/render-theme.sh
+#   screenshots land in ./render-*.png
+#
+# The theme is built from THIS REPO, and the run refuses to continue if that build fails or the theme
+# did not reach the image: a harness that silently renders an empty theme produces confident nonsense —
+# it did exactly that once, and the "errors on screen" it showed were its own, not GRUB's.
 set -u
-S=/home/chethan/.hermes/cache/scratch
-W=$S/render; rm -rf "$W"; mkdir -p "$W/esp/EFI/BOOT"
-rm -f "$S"/render-*.ppm "$S"/render-*.png
+REPO=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+TH="$REPO/theme"
+W=${WORK:-$PWD/render}; rm -rf "$W"; mkdir -p "$W/esp/EFI/BOOT"
+rm -f "$W"/render-*.ppm "$W"/render-*.png
 
-CFG=${CFG:-$S/test-grub.cfg}
+CFG=${CFG:-$REPO/scripts/test-grub.cfg}
+[ -f "$CFG" ] || { echo "no config at $CFG"; exit 1; }
 grub-mkstandalone -O x86_64-efi -o "$W/esp/EFI/BOOT/BOOTX64.EFI" \
   --modules="all_video gfxterm gfxmenu png fat search_fs_file normal echo test" \
   "boot/grub/grub.cfg=$CFG" 2>&1 | tail -1
 
-# build the theme from the staged sources into a scratch dir (no root needed), then put that on the
-# esp image — so the render always shows the CURRENT staged theme, not the installed one.
-mkdir -p "$W/build"
-cp -f "$S/build-assets.sh" "$S/theme.txt" "$W/build/" 2>/dev/null || true
+# build the theme from the repo sources into a scratch dir (no root needed), then put that on the esp
+# image — so the render always shows the CURRENT theme, not whatever is installed on this machine.
 mkdir -p "$W/build/cachyos-pro"
-cp -f "$S/build-assets.sh" "$S/theme.txt" "$W/build/cachyos-pro/"
-bash "$W/build/cachyos-pro/build-assets.sh" >/dev/null
+cp -f "$TH/build-assets.sh" "$TH/theme.txt" "$W/build/cachyos-pro/" \
+  || { echo "theme sources missing in $TH — nothing to render"; exit 1; }
+bash "$W/build/cachyos-pro/build-assets.sh" >/dev/null \
+  || { echo "theme build FAILED (see $W/build/cachyos-pro)"; exit 1; }
+[ -f "$W/build/cachyos-pro/theme.txt" ] || { echo "theme build produced no theme.txt"; exit 1; }
 
 dd if=/dev/zero of="$W/esp.img" bs=1M count=48 status=none
 mformat -i "$W/esp.img" -F -v ESP ::
 mmd -i "$W/esp.img" ::/EFI ::/EFI/BOOT ::/themes
 mcopy -i "$W/esp.img" "$W/esp/EFI/BOOT/BOOTX64.EFI" ::/EFI/BOOT/
 mcopy -s -i "$W/esp.img" "$W/build/cachyos-pro" ::/themes/
-echo "esp: $(stat -c %s "$W/esp.img") bytes; theme files on image: $(mdir -i "$W/esp.img" -b ::/themes/cachyos-pro | wc -l); fonts built: $(ls "$W/build/cachyos-pro"/*.pf2 | wc -l)"
+FILES=$(mdir -i "$W/esp.img" -b ::/themes/cachyos-pro | wc -l)
+echo "esp: $(stat -c %s "$W/esp.img") bytes; theme files on image: $FILES; fonts built: $(ls "$W/build/cachyos-pro"/*.pf2 2>/dev/null | wc -l)"
+[ "$FILES" -ge 10 ] || { echo "only $FILES theme files on the image — refusing to boot a broken image"; exit 1; }
 
-MON=$S/qmon.sock; VARS=$S/OVMF_VARS.fd
+MON=$W/qmon.sock; VARS=$W/OVMF_VARS.fd
 rm -f "$MON"; cp -f /usr/share/edk2/x64/OVMF_VARS.4m.fd "$VARS"
 ACCEL=tcg; [ -w /dev/kvm ] && ACCEL=kvm
-cleanup() { pkill -f "qmon\.sock" 2>/dev/null; }
+QPID=""
+cleanup() { [ -n "$QPID" ] && kill "$QPID" 2>/dev/null; }   # by PID: a -f pattern can hit the caller
 trap cleanup EXIT
 
 qemu-system-x86_64 -machine q35 -m 1024 -accel "$ACCEL" \
@@ -42,9 +54,9 @@ qemu-system-x86_64 -machine q35 -m 1024 -accel "$ACCEL" \
   -display none -monitor unix:"$MON",server,nowait -serial file:"$W/serial.log" &
 QPID=$!
 
-python3 - "$MON" "$S" <<'PY'
+python3 - "$MON" "$W" <<'PY'
 import socket, sys, time
-mon, S = sys.argv[1], sys.argv[2]
+mon, W = sys.argv[1], sys.argv[2]
 s = None
 for _ in range(60):
     try:
@@ -54,7 +66,7 @@ if s is None: sys.exit("monitor never came up")
 def cmd(c, wait=0.5):
     s.sendall((c + "\n").encode()); time.sleep(wait)
 def shot(n):
-    cmd("screendump %s/render-%s.ppm" % (S, n), wait=1.4)
+    cmd("screendump %s/render-%s.ppm" % (W, n), wait=1.4)
 t0 = time.time()
 def at(t):
     d = t0 + t - time.time()
@@ -71,6 +83,6 @@ cmd("sendkey ret", wait=1.6)
 at(11.0); shot("submenu")
 cmd("quit", wait=0.5); s.close()
 PY
-sleep 1; kill $QPID 2>/dev/null
-for p in "$S"/render-*.ppm; do [ -f "$p" ] && magick "$p" "${p%.ppm}.png" && rm -f "$p"; done
-for f in "$S"/render-*.png; do printf "%-26s %s\n" "$(basename "$f")" "$(magick identify -format '%wx%h' "$f")"; done
+sleep 1; kill $QPID 2>/dev/null; QPID=""
+for p in "$W"/render-*.ppm; do [ -f "$p" ] && magick "$p" "${p%.ppm}.png" && rm -f "$p"; done
+for f in "$W"/render-*.png; do printf "%-26s %s\n" "$(basename "$f")" "$(magick identify -format '%wx%h' "$f")"; done
