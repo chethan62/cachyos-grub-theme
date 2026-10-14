@@ -102,12 +102,17 @@ sudo bash install/finish-theme.sh            # then reboot
 The installer refuses to guess: if the UUID in `12_windows` is not on the machine it says so and tells
 you how to list them. Anything it replaces is backed up to `/var/backups/cachyos-grub-theme/`.
 
-Revert — dry run first, then apply:
+Undo — dry run first, then apply:
 
 ```bash
-sudo bash install/rollback.sh           # prints the plan, changes nothing
-sudo bash install/rollback.sh --apply   # restores the stock theme + stock /etc/default/grub
+sudo bash install/rollback.sh --apply                  # stock menu back; theme left on disk
+sudo bash install/finish-theme.sh --uninstall --apply  # full uninstall: theme + helper removed
 ```
+
+Both print the plan and change nothing until `--apply`. All guards run before the first destructive
+step, so a missing backup refuses and leaves everything in place; anything replaced is kept in
+`/var/backups/cachyos-grub-theme/`. `finish-theme.sh` with no arguments **installs** — there is
+deliberately no uninstall-by-default.
 
 ## If the theme does not display
 

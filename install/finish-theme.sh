@@ -13,6 +13,19 @@ TH="$REPO/theme"; INST="$REPO/install"; TOOLS="$REPO/tools"; SCRIPTS="$REPO/scri
 T=/usr/share/grub/themes/cachyos-pro
 [ "$(id -u)" = 0 ] || { echo "run me with sudo"; exit 1; }
 
+# --uninstall is the rollback script's --purge (it also removes the theme + helper). Same engine, so
+# there is one place where the destructive steps and their guards live.
+case "${1:-}" in
+  --uninstall) shift; exec bash "$REPO/install/rollback.sh" --purge "$@" ;;
+  --help|-h)
+    cat <<'USAGE'
+usage: finish-theme.sh                 install / re-sync the theme (the default action)
+       finish-theme.sh --uninstall     remove everything it installed (dry run; add --apply)
+       rollback.sh                     same, with --purge for the theme files
+USAGE
+    exit 0 ;;
+esac
+
 echo "== 1/5 restore the shipped timeout + a GFXMODE fallback, install final theme.txt + builder"
 sed -i "s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT='3'/" /etc/default/grub
 # a single pinned mode has NO fallback: if the mode is absent GRUB drops to the text console.

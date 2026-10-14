@@ -1,7 +1,11 @@
 #!/bin/bash
-# Undo everything install/finish-theme.sh did: back to the stock CachyOS boot menu.
-#   sudo bash install/rollback.sh            # dry run — prints the plan, changes nothing
-#   sudo bash install/rollback.sh --apply    # performs it
+# Undo everything install/finish-theme.sh did.
+#   sudo bash install/rollback.sh                    # dry run — prints the plan, changes nothing
+#   sudo bash install/rollback.sh --apply            # stock menu back; custom theme left on disk
+#   sudo bash install/rollback.sh --purge --apply    # also remove the theme + helper (uninstall)
+#
+# `install/finish-theme.sh --uninstall` is the same thing under the name people reach for. Note that
+# finish-theme.sh with no arguments INSTALLS — an uninstall-by-default would be a footgun.
 #
 # Order matters: every guard runs BEFORE the first destructive step, so a bad invocation changes
 # nothing at all. The regenerated grub.cfg is written to a temp file and syntax-checked before it
@@ -9,9 +13,17 @@
 set -eu
 REPO=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 T=/usr/share/grub/themes/cachyos-pro
+HELPER=/usr/local/bin/grub-menu-patches
 BACKUP=${GRUB_BACKUP:-/etc/default/grub.bak-theme}
 STOCK_THEME=/usr/share/grub/themes/cachyos/theme.txt
-APPLY=0; [ "${1:-}" = "--apply" ] && APPLY=1
+APPLY=0; PURGE=0
+for a in "$@"; do
+  case "$a" in
+    --apply) APPLY=1 ;;
+    --purge) PURGE=1 ;;
+    *) echo "usage: rollback.sh [--apply] [--purge]  (finish-theme.sh --uninstall = --purge)" >&2; exit 2 ;;
+  esac
+done
 
 # ---------- guards ----------
 [ "$(id -u)" = 0 ] || { echo "run me with sudo"; exit 1; }
@@ -42,7 +54,7 @@ regen() {  # never leave a broken boot config in place
   mv -f /tmp/grub.cfg.rollback.new /boot/grub/grub.cfg
 }
 
-echo "Rollback plan (stock theme, stock /etc/default/grub):"
+echo "Rollback plan ($([ "$PURGE" = 1 ] && echo 'uninstall: theme + helper removed' || echo 'stock theme, custom theme kept')):"
 echo "1. remove the entries and the upgrade hook this theme added"
 do_ rm -f /etc/grub.d/12_windows /etc/grub.d/12_memtest
 do_ rm -f /etc/pacman.d/hooks/31-efi-bootnext-off.hook
@@ -54,7 +66,25 @@ echo "4. clear the saved default (otherwise the first entry stays unpredictable)
 do_ grub-editenv /boot/grub/grubenv unset saved_entry
 echo "5. regenerate grub.cfg (temp file, syntax-checked, then swapped in)"
 do_ regen
+echo "6. remove the theme and its helper"
+if [ "$PURGE" = 1 ]; then
+  do_ rm -rf "$T"
+  do_ rm -f "$HELPER"
+  # the restored backup usually predates the theme, but if it still names the removed theme GRUB would
+  # stop at "Press any key to continue..." with no menu — disable it and regenerate again.
+  if sed -n 's/^GRUB_THEME=//p' /etc/default/grub | grep -q cachyos-pro; then
+    do_ sed -i "s|^GRUB_THEME=.*|#GRUB_THEME= disabled (uninstalled)|" /etc/default/grub
+    echo "   (GRUB_THEME pointed at the removed theme — disabled, regenerating again)"
+    do_ regen
+  fi
+else
+  show "(skipped — add --purge to remove $T and $HELPER)"
+fi
 echo
-echo "Kept: $T (harmless, and re-running install/finish-theme.sh reuses it)"
-[ "$APPLY" = 1 ] && echo "Rolled back — reboot to confirm the stock menu." \
+if [ "$PURGE" = 1 ]; then
+  show "kept: /var/backups/cachyos-grub-theme/ and $BACKUP — the files that were replaced"
+else
+  show "kept: $T — harmless, and re-running install/finish-theme.sh reuses it"
+fi
+[ "$APPLY" = 1 ] && echo "Done — reboot to confirm." \
                  || echo "Dry run: nothing changed. Re-run with --apply to perform it."
