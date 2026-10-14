@@ -159,6 +159,7 @@ firmware route that works when GRUB itself will not start.
 | `theme/build-assets.sh` | generates background, highlight slices, fonts and icons (idempotent) |
 | `tools/grub-menu-patches` | all `/etc/grub.d` edits, `apply` or `verify`; `GRUB_D` overridable for tests |
 | `scripts/render-theme.sh`, `scripts/test-grub.cfg` | the QEMU render harness (standalone GRUB on a FAT image, no disk access) |
+| `scripts/audit-menu.sh` | lists what every `/etc/grub.d` generator emits (read-only, no root) — submenus and duplicates included |
 | `scripts/qemu-verify.sh` | end-to-end check of the **installed** theme: boots the real disk read-only and screenshots the menu |
 | `install/` | this machine's installer, `12_windows`, `12_memtest`, and the pacman hook |
 | `docs/` | research notes + the GRUB theme-format reference |
