@@ -143,15 +143,47 @@ for ic in cachyos linux windows11 efi snapshots; do
 done
 
 # ---------- fonts ----------
+# Distros keep these in different roots (Arch: /usr/share/fonts/TTF, Debian: /usr/share/fonts/truetype),
+# and Cantarell ships either as one variable font or as static Regular/Bold files. Discover, then fail
+# loudly: four silent "cannot open resource" lines used to leave a theme with no fonts at all.
+find_font() {
+  for p in "$@"; do [ -f "$p" ] && { printf '%s\n' "$p"; return 0; }; done
+  return 1
+}
+VF=$(find_font /usr/share/fonts/cantarell/Cantarell-VF.otf \
+              /usr/share/fonts/truetype/cantarell/Cantarell-VF.otf \
+              /usr/share/fonts/opentype/cantarell/Cantarell-VF.otf) || VF=""
+CANT_REG=$(find_font /usr/share/fonts/cantarell/Cantarell-Regular.otf \
+                    /usr/share/fonts/truetype/cantarell/Cantarell-Regular.otf) || CANT_REG=""
+CANT_BOLD=$(find_font /usr/share/fonts/cantarell/Cantarell-Bold.otf \
+                     /usr/share/fonts/truetype/cantarell/Cantarell-Bold.otf) || CANT_BOLD=""
+DEJAVU=$(find_font /usr/share/fonts/TTF/DejaVuSans.ttf \
+                   /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf) || DEJAVU=""
+[ -n "$DEJAVU" ] || { echo "build-assets: DejaVuSans.ttf not found (install fonts-dejavu-core)" >&2; exit 1; }
+
 # No -n: grub-mkfont derives "<Family> <Style> <Size>" from the font itself, which is the
 # name GRUB looks up. Passing -n sets the *family*, and every lookup then misses to Unifont.
-grub-mkfont -s 48 -b -o "$DIR/cantarell_bold_48.pf2"    "$VF" 2>/dev/null
-grub-mkfont -s 24    -o "$DIR/cantarell_regular_24.pf2" "$VF" 2>/dev/null
-grub-mkfont -s 19    -o "$DIR/cantarell_regular_19.pf2" "$VF" 2>/dev/null
+if [ -n "$VF" ]; then
+  grub-mkfont -s 48 -b -o "$DIR/cantarell_bold_48.pf2"    "$VF"
+  grub-mkfont -s 24    -o "$DIR/cantarell_regular_24.pf2" "$VF"
+  grub-mkfont -s 19    -o "$DIR/cantarell_regular_19.pf2" "$VF"
+elif [ -n "$CANT_REG" ] && [ -n "$CANT_BOLD" ]; then
+  grub-mkfont -s 48 -b -o "$DIR/cantarell_bold_48.pf2"    "$CANT_BOLD"
+  grub-mkfont -s 24    -o "$DIR/cantarell_regular_24.pf2" "$CANT_REG"
+  grub-mkfont -s 19    -o "$DIR/cantarell_regular_19.pf2" "$CANT_REG"
+else
+  echo "build-assets: neither Cantarell-VF.otf nor Cantarell Regular+Bold found (install fonts-cantarell)" >&2
+  exit 1
+fi
 # glyph fallback so @KEYMAP@ hints and any stray arrow never render as tofu
-grub-mkfont -s 15    -o "$DIR/dejavu_sans_15.pf2"       "$DEJAVU" 2>/dev/null
-# monospace face for the 'c' shell
-cp -f /usr/share/grub/themes/cachyos/terminus-18.pf2 "$DIR/terminus-18.pf2"
+grub-mkfont -s 15    -o "$DIR/dejavu_sans_15.pf2"       "$DEJAVU"
+# monospace face for the 'c' shell: copied from the stock CachyOS theme when this machine has one.
+# Optional by design — without it the shell uses whichever font loaded (cosmetic, never fatal).
+if [ -f /usr/share/grub/themes/cachyos/terminus-18.pf2 ]; then
+  cp -f /usr/share/grub/themes/cachyos/terminus-18.pf2 "$DIR/terminus-18.pf2"
+else
+  echo "build-assets: no stock terminus-18.pf2; the 'c' shell will use a fallback font" >&2
+fi
 
 rm -rf "$STAGE"
 echo "cachyos-pro assets rebuilt in $DIR"

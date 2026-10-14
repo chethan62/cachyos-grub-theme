@@ -49,6 +49,17 @@ The render harness builds a standalone GRUB with an embedded menu that mirrors t
 current theme on a 48 MB FAT image, and boots it under OVMF with the monitor socket as the control
 channel — so the theme is exercised exactly as it renders on the machine, with no raw disk access.
 
+## Requirements
+
+Building the assets needs `rsvg-convert` (librsvg2-bin), ImageMagick, `grub-mkfont` (grub-common) and
+the Cantarell + DejaVu Sans fonts; the render harness additionally needs `qemu-system-x86_64`,
+`edk2-ovmf` and `mtools`. Font paths are discovered across the Arch and Debian layouts, and the build
+fails with a named missing dependency rather than emitting a theme with no fonts.
+
+The `c`-shell monospace face is copied from the installed stock CachyOS theme when one is present;
+where it is absent the shell falls back to whichever font loaded, and `tests/check.py` reports the
+substitution as a note instead of a failure.
+
 ## Install
 
 ```bash

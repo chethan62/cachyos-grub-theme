@@ -75,7 +75,12 @@ def main() -> int:
     check("a" in identify(THEME / "select_c.png", "%[channels]"),
           "highlight slices carry an alpha channel", identify(THEME / "select_c.png", "%[channels]"))
     fonts = sorted(p.name for p in THEME.glob("*.pf2"))
-    check(len(fonts) >= 5, "fonts built", f"{len(fonts)}: {', '.join(fonts)}")
+    core = {"cantarell_bold_48.pf2", "cantarell_regular_24.pf2", "cantarell_regular_19.pf2",
+            "dejavu_sans_15.pf2"}
+    check(core <= set(fonts), "core fonts built (menu + hint faces)",
+          f"{len(fonts)} pf2: {', '.join(fonts)}")
+    # the 'c'-shell monospace face is copied from the stock CachyOS theme when present — optional
+    print(f"     terminal font {'present' if 'terminus-18.pf2' in fonts else 'absent (shell falls back)'}")
 
     icons = sorted(p for p in (THEME / "icons").glob("*.png")) if (THEME / "icons").is_dir() else []
     check(len(icons) >= 3, "icons built", f"{len(icons)}: {', '.join(p.name for p in icons)}")
