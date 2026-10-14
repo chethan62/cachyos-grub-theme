@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Apply/verify the /etc/grub.d patches this boot menu needs. Idempotent; safe to re-run.
+
+Why a script: pacman restores these package-owned files on every grub upgrade, so the patches have
+to be re-applied — /etc/pacman.d/hooks/31-efi-bootnext-off.hook calls `grub-menu-patches apply`
+after grub updates, and one file means one place to read, test and fix.
+
+Usage: grub-menu-patches [apply|verify]     (verify is the default)
+Exit 0 = every patch is in place; 1 = something needs attention.
+"""
+import os
+import pathlib
+import sys
+
+PATCHES = [
+    (  # submenu marker, because GRUB draws no submenu indicator of its own
+        "10_linux",
+        'gettext_printf "Advanced options for %s" "${OS}"',
+        'gettext_printf "Advanced options for %s  ▶" "${OS}"',
+        "submenu marker on the Advanced row",
+    ),
+    (  # icon: gnu-linux.png/linux.png (Tux) — the row selects a kernel
+        "10_linux",
+        '"${OS}" | grub_quote)\' \\$menuentry_id_option',
+        '"${OS}" | grub_quote)\' --class linux \\$menuentry_id_option',
+        "--class linux on the Advanced submenu",
+    ),
+    (  # icon: efi.png (a gear)
+        "30_uefi-firmware",
+        "menuentry '$LABEL' \\$menuentry_id_option",
+        "menuentry '$LABEL' --class efi \\$menuentry_id_option",
+        "--class efi on the firmware entry",
+    ),
+    (  # icon: snapshots.png (clock, drawn by build-assets.sh)
+        "41_snapshots-btrfs",
+        "submenu '${title_menu}' {",
+        "submenu '${title_menu}' --class snapshots {",
+        "--class snapshots on the snapshots submenu",
+    ),
+]
+
+# GRUB_D is overridable so the patch logic can be tested against fixtures instead of the live tree.
+GRUB_D = pathlib.Path(os.environ.get("GRUB_D", "/etc/grub.d"))
+
+
+def main(mode: str) -> int:
+    problems = 0
+    for name, find, repl, why in PATCHES:
+        path = GRUB_D / name
+        if not path.exists():
+            print(f"MISSING  {name:<20} {why}")
+            problems += 1
+            continue
+        text = path.read_text()
+        if repl in text:
+            print(f"ok       {name:<20} {why}")
+        elif find in text:
+            if mode == "apply":
+                path.write_text(text.replace(find, repl, 1))
+                print(f"applied  {name:<20} {why}")
+            else:
+                print(f"MISSING  {name:<20} {why}")
+                problems += 1
+        else:
+            # The upstream string moved — the patch silently no-ops, so say so loudly rather than
+            # reporting success. The menu degrades cosmetically (no marker/icon on that row).
+            print(f"CHANGED  {name:<20} {why} (upstream text not found — re-check the pattern)")
+            problems += 1
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "verify"))

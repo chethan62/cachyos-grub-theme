@@ -1,0 +1,23 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rsvg-convert for the SVG assets, ImageMagick for the slices/icons, grub for grub-mkfont
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends librsvg2-bin imagemagick grub-common fonts-cantarell
+
+      - name: Build every generated asset
+        run: bash theme/build-assets.sh
+
+      - name: Assert the README's numbers
+        run: python3 tests/check.py

@@ -1,0 +1,11 @@
+#!/bin/sh
+exec tail -n +3 $0
+# Windows 11 — pinned chainload, replaces os-prober's "Windows Boot Manager (on /dev/nvme1n1p1)" label.
+# Owned by nobody (not a grub package file), so pacman upgrades never touch it.
+# Loses os-prober auto-detect: if the Windows ESP UUID changes, re-enable GRUB_DISABLE_OS_PROBER=false.
+menuentry 'Windows 11' --class windows11 --class windows --class os $menuentry_id_option 'osprober-efi-F0E7-FD1E' {
+	insmod part_gpt
+	insmod fat
+	search --no-floppy --fs-uuid --set=root F0E7-FD1E
+	chainloader /efi/Microsoft/Boot/bootmgfw.efi
+}

@@ -1,0 +1,17 @@
+#!/bin/sh
+# Memory-test entry, emitted ONLY when the payload is actually present — so no broken
+# menu entry can appear before the package is installed:
+#   sudo pacman -S memtest86+-efi
+#   sudo grub-mkconfig -o /boot/grub/grub.cfg      (or re-run finish-theme.sh)
+# The package's convention is /boot/memtest86+/memtest.efi; if a future version lands it
+# elsewhere, this entry simply does not appear (safe failure) — update MEMTEST_PATH then.
+MEMTEST_PATH=/boot/memtest86+/memtest.efi
+[ -f "$MEMTEST_PATH" ] || exit 0
+cat <<EOF
+menuentry 'Memory Test (memtest86+ EFI)' --class memtest {
+	insmod part_gpt
+	insmod btrfs
+	insmod chain
+	chainloader $MEMTEST_PATH
+}
+EOF
