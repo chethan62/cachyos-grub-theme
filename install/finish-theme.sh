@@ -64,11 +64,16 @@ install -m755 "$INST/12_memtest" /etc/grub.d/12_memtest
 # Windows entry: install it only when one is missing, so a local edit (a different ESP UUID) is never
 # clobbered — and check the UUID it pins actually exists on a partition, because a stale UUID means a
 # menu entry that cannot boot Windows.
-if [ -f /etc/grub.d/12_windows ]; then
-  echo "12_windows already present — left alone"
-else
+if [ ! -f /etc/grub.d/12_windows ]; then
   install -m755 "$INST/12_windows" /etc/grub.d/12_windows
   echo "12_windows installed (check the ESP UUID matches this machine)"
+elif cmp -s "$INST/12_windows" /etc/grub.d/12_windows; then
+  echo "12_windows already current"
+else
+  # an older revision lacked the --class that lets the row resolve an icon
+  cp -f /etc/grub.d/12_windows /etc/grub.d/12_windows.bak
+  install -m755 "$INST/12_windows" /etc/grub.d/12_windows
+  echo "12_windows refreshed (previous copy kept as 12_windows.bak — restore it if you had edited the UUID)"
 fi
 # ESP UUIDs are XXXX-XXXX; match that shape rather than the text after the option, which is
 # `--set=root` on the preceding token (a greedy match happily returns "--")
@@ -101,9 +106,16 @@ echo "== 2/5 rebuild generated assets (background, highlight slices, fonts)"
 
 echo "== 3/5 regenerate grub.cfg"
 grep -E "^GRUB_TIMEOUT=|^GRUB_GFXMODE=|^GRUB_THEME=|^GRUB_DISABLE_OS_PROBER=" /etc/default/grub
-grub-mkconfig -o /boot/grub/grub.cfg 2>&1 | grep -E "Found theme|error"
-echo -n "effective: "; grep -m1 "set timeout=" /boot/grub/grub.cfg
-grub-script-check /boot/grub/grub.cfg && echo "grub.cfg syntax OK"
+# generate to a temp file and syntax-check BEFORE replacing the live config: a boot config that GRUB
+# cannot parse is the one way this could leave the machine worse off than it found it.
+grub-mkconfig -o /tmp/grub.cfg.new 2>&1 | grep -E "Found theme|error"
+if grub-script-check /tmp/grub.cfg.new; then
+  mv -f /tmp/grub.cfg.new /boot/grub/grub.cfg
+  echo "grub.cfg syntax OK — installed"
+else
+  echo "generated grub.cfg FAILED its syntax check; the live config was left untouched" >&2
+  exit 1
+fi
 # the snapshot submenu is the only place a label can overflow: the 760 px menu leaves 668 px of text
 # room once the 40 px icon and its 20 px gutter are taken out of the row
 echo -n "longest snapshot label after regeneration: "
@@ -169,4 +181,15 @@ printf "generated cfg: classes=[%s] markers adv/snap=%s/%s saved_entry refs=%s\n
   "$(grep -c 'Advanced options for CachyOS Linux  ▶' /boot/grub/grub.cfg)" \
   "$(grep -c 'CachyOS Linux snapshots  ▶' /boot/grub/grub.cfg)" \
   "$(grep -c 'saved_entry' /boot/grub/grub.cfg)"
+# Every row that should show an icon needs BOTH its class in the generated config and its icon file in
+# the theme. Only checkable here (grub.cfg is root-only), and it is the check that matters: a patch can
+# land on a line that is never emitted, which is exactly how the snapshots row once lost its icon while
+# `grub-menu-patches verify` still said ok.
+echo "icon resolution:"
+for pair in "CachyOS Linux:cachyos" "Advanced:linux" "Windows 11:windows11" "UEFI:efi" "snapshots:snapshots"; do
+  row=${pair%%:*}; cls=${pair##*:}
+  printf "  %-14s --class %-10s in cfg=%s  icon=%s\n" "$row" "$cls" \
+    "$(grep -c -- "--class $cls" /boot/grub/grub.cfg)" \
+    "$([ -f "$T/icons/$cls.png" ] && echo yes || echo MISSING)"
+done
 echo "Reboot to see it on the panel — that is the one step this cannot do for you."

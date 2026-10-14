@@ -115,7 +115,12 @@ def main() -> int:
                     '| grub_quote)\' \\$menuentry_id_option \'gnulinux-advanced-$boot_device_id\' {"\n',
         "30_uefi-firmware": "\t\tmenuentry '$LABEL' \\$menuentry_id_option 'uefi-firmware' "
                             "${allowed_user_list}{\n",
-        "41_snapshots-btrfs": "    entry \"submenu '${title_menu}' {\n",
+        "41_snapshots-btrfs":
+            # the real emission (line 629 of the upstream script) plus the stray an older revision of
+            # this project left behind — the retired patch must undo exactly that
+            "submenu '${submenuname}' ${protection_authorized_users}"
+            "${unrestricted_access_submenu}{\n"
+            "    entry \"submenu '${title_menu}' --class snapshots {\n",
     }
     tool = ROOT / "tools" / "grub-menu-patches"
     with tempfile.TemporaryDirectory() as td:
@@ -126,6 +131,18 @@ def main() -> int:
         def run(mode: str) -> tuple[int, str]:
             r = subprocess.run([sys.executable, str(tool), mode], capture_output=True, text=True, env=env)
             return r.returncode, r.stdout
+
+        # a class with no icon file renders nothing (GRUB walks an entry's classes in order and stops at
+        # the first hit), so every class these scripts add must have an icon — this is the invariant
+        # that a class on a never-emitted line hides, and it is why the Windows entry's FIRST class is
+        # the one that has to exist
+        classes = set(re.findall(r"--class ([a-z0-9-]+)",
+                                 (ROOT / "tools" / "grub-menu-patches").read_text()))
+        win = re.findall(r"--class ([a-z0-9-]+)", (ROOT / "install" / "12_windows").read_text())
+        classes |= set(win[:1])
+        missing_icons = sorted(c for c in classes if not (THEME / "icons" / f"{c}.png").exists())
+        check(not missing_icons, "every --class the scripts add resolves to an icon file",
+              f"missing: {missing_icons}" if missing_icons else f"{sorted(classes)}")
 
         rc, _ = run("verify")
         check(rc == 1, "verify reports the unpatched tree as incomplete")
@@ -142,6 +159,14 @@ def main() -> int:
         (pathlib.Path(td) / "30_uefi-firmware").write_text("menuentry 'renamed upstream' {\n")
         rc, txt = run("verify")
         check(rc == 1 and "CHANGED" in txt, "drifted upstream text is reported, not passed")
+
+        # the emitted row, not just the script: a class on the inner submenu line looks patched and
+        # renders nothing, which is the bug this assertion exists to prevent
+        snaps = (pathlib.Path(td) / "41_snapshots-btrfs").read_text()
+        check("--class snapshots ${protection_authorized_users}" in snaps,
+              "the class lands on the OUTER submenu row (the one the menu emits)")
+        check("'${title_menu}' --class snapshots" not in snaps,
+              "the stray class on the inner submenu is reverted")
 
     print()
     if failures:

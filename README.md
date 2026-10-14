@@ -74,13 +74,32 @@ regenerates `grub.cfg`.
 hardcodes the author's Windows ESP filesystem UUID (`F0E7-FD1E`) and `finish-theme.sh` writes to
 `/etc/default/grub`. Change the UUID for your own disk (`lsblk -o NAME,FSTYPE,UUID`) before running it.
 
-Revert:
+Revert — dry run first, then apply:
 
 ```bash
-sudo rm /etc/grub.d/12_windows /etc/grub.d/12_memtest
-sudo cp /etc/default/grub.bak-theme /etc/default/grub
-sudo grub-mkconfig -o /boot/grub/grub.cfg
+sudo bash install/rollback.sh           # prints the plan, changes nothing
+sudo bash install/rollback.sh --apply   # restores the stock theme + stock /etc/default/grub
 ```
+
+## If the theme does not display
+
+**A theme failure degrades, it never bricks.** GRUB drops back to its plain text menu, and every
+kernel and the Windows entry still boot. This repo writes only `/etc`, `/usr/share/grub/themes` and
+`/boot/grub/grub.cfg` — never the ESP or the firmware — so even an unparseable config leaves you at
+GRUB's own prompt, not at an unbootable machine. Worst realistic case: a text menu, a missing icon, or
+the wrong default entry.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Plain text menu, no theme | theme load failed: missing `background.png` (fatal), a font name that does not resolve, or a typo in a *global* property | rebuild with `theme/build-assets.sh`; confirm the font names with `grub-mkfont` (never `-n`); check the path in `GRUB_THEME` |
+| Icons missing, or uneven sizes on some rows | a `/etc/grub.d` patch lost (grub upgraded without the hook), or `grub.cfg` not regenerated afterwards | `grub-menu-patches verify`, then `sudo grub-mkconfig -o /boot/grub/grub.cfg` |
+| Menu appears but the countdown never ends | `GRUB_TIMEOUT` is `-1` (the capture phases set that) | `sudo sed -i "s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT='3'/" /etc/default/grub && sudo grub-mkconfig -o /boot/grub/grub.cfg` |
+| Boots the other OS by default | `GRUB_DEFAULT=saved` remembers the last boot | `sudo grub-editenv /boot/grub/grubenv unset saved_entry` (or set `GRUB_DEFAULT=0`) |
+| Text console instead of the menu | `GRUB_GFXMODE` without a fallback list | keep the trailing `,1024x768,auto` |
+| Want none of it | | `sudo bash install/rollback.sh --apply` |
+
+If the menu is unusable *at boot*: the snapshots submenu boots a pre-update system, the firmware boot
+menu still lists the `EFI Hard Drive` fallback, and a live USB always works.
 
 ## Layout
 
@@ -107,6 +126,11 @@ sudo grub-mkconfig -o /boot/grub/grub.cfg
   silent; a typo in a global property aborts the theme while the same typo in a component is ignored.
 - **A flat monochrome penguin is unrecognisable.** Tux reads as "penguin" because of its two-tone
   body; the flat version was tried, rendered, and reverted.
+- **A patch must target the line that is EMITTED, not the first line that looks right.** The snapshots
+  row's `--class` was inserted into the inner per-snapshot submenu line (`${title_menu}`, inside
+  `grub-btrfs.cfg`) instead of the outer row the menu shows (`${submenuname}`, line 629 of
+  `41_snapshots-btrfs`) — so it verified "ok", rendered nothing, and only a render of the real disk
+  caught it. When a patch's success is claimed, assert the generated output as well as the script.
 - **Right-aligning the submenu `▶` is impossible.** GRUB 2.16's theme format has no submenu-indicator
   property; the marker is part of the label string, so its x position drifts with the title length.
 

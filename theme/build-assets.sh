@@ -141,6 +141,10 @@ for ic in cachyos linux windows11 efi snapshots; do
   magick "$STAGE/$ic.png" -trim +repage -resize 48x48 -background none -gravity center \
     -extent 64x64 -depth 8 PNG32:"$DIR/icons/$ic.png"
 done
+# alias: the classic grub class on a Windows entry is `windows` (e.g. an os-prober entry, or a
+# hand-written /etc/grub.d/12_windows from before this theme). Without this, such a row resolves no
+# icon at all — the fallback chain walks `windows11 -> windows -> os` and stops at the first hit.
+[ -f "$DIR/icons/windows11.png" ] && cp -f "$DIR/icons/windows11.png" "$DIR/icons/windows.png"
 
 # ---------- fonts ----------
 # Font roots differ per distro (Arch: /usr/share/fonts/TTF, Debian: /usr/share/fonts/{truetype,opentype}),

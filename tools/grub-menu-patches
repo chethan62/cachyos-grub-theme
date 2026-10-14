@@ -32,10 +32,26 @@ PATCHES = [
         "--class efi on the firmware entry",
     ),
     (  # icon: snapshots.png (clock, drawn by build-assets.sh)
+        # The class MUST go on the OUTER submenu row — the one built from ${submenuname}, which is the
+        # row the top-level menu shows. The inner per-snapshot submenu (${title_menu}) is a different
+        # line inside grub-btrfs.cfg: patching that one makes `verify` say ok and renders no icon,
+        # because the text landed on a row nobody sees.
         "41_snapshots-btrfs",
-        "submenu '${title_menu}' {",
+        "submenu '${submenuname}' ${protection_authorized_users}${unrestricted_access_submenu}{",
+        "submenu '${submenuname}' --class snapshots "
+        "${protection_authorized_users}${unrestricted_access_submenu}{",
+        "--class snapshots on the snapshots submenu (outer row)",
+    ),
+]
+
+# Patches from earlier revisions that must be UNDONE on trees that already have them. A patch table
+# only grows otherwise, and a stray edit stays in /etc/grub.d forever.
+RETIRED = [
+    (  # targeted the inner submenu, so the visible row never got its icon
+        "41_snapshots-btrfs",
         "submenu '${title_menu}' --class snapshots {",
-        "--class snapshots on the snapshots submenu",
+        "submenu '${title_menu}' {",
+        "class on the wrong (inner) snapshots submenu",
     ),
 ]
 
@@ -66,6 +82,20 @@ def main(mode: str) -> int:
             # reporting success. The menu degrades cosmetically (no marker/icon on that row).
             print(f"CHANGED  {name:<20} {why} (upstream text not found — re-check the pattern)")
             problems += 1
+    for name, unwanted, restore, why in RETIRED:
+        path = GRUB_D / name
+        if not path.exists():
+            continue
+        text = path.read_text()
+        if unwanted in text:
+            if mode == "apply":
+                path.write_text(text.replace(unwanted, restore, 1))
+                print(f"reverted {name:<20} {why}")
+            else:
+                print(f"STALE    {name:<20} {why} (run apply to remove it)")
+                problems += 1
+        else:
+            print(f"ok       {name:<20} retired: {why}")
     return 1 if problems else 0
 
 

@@ -21,7 +21,13 @@ trap cleanup EXIT
 
 set_timeout() {            # $1 = GRUB_TIMEOUT value
   sed -i "s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT='$1'/" /etc/default/grub
-  grub-mkconfig -o /boot/grub/grub.cfg >/dev/null 2>&1
+  # temp file + syntax check before swapping in: this harness rewrites the live boot config twice
+  grub-mkconfig -o /tmp/grub.cfg.verify.new >/dev/null 2>&1
+  if ! grub-script-check /tmp/grub.cfg.verify.new >/dev/null 2>&1; then
+    echo "generated grub.cfg failed its syntax check; the live config was left untouched" >&2
+    exit 1
+  fi
+  mv -f /tmp/grub.cfg.verify.new /boot/grub/grub.cfg
   sync
 }
 boot() {                   # $1 = python capture program
