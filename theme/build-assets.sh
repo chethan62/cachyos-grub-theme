@@ -143,23 +143,36 @@ for ic in cachyos linux windows11 efi snapshots; do
 done
 
 # ---------- fonts ----------
-# Distros keep these in different roots (Arch: /usr/share/fonts/TTF, Debian: /usr/share/fonts/truetype),
-# and Cantarell ships either as one variable font or as static Regular/Bold files. Discover, then fail
-# loudly: four silent "cannot open resource" lines used to leave a theme with no fonts at all.
-find_font() {
-  for p in "$@"; do [ -f "$p" ] && { printf '%s\n' "$p"; return 0; }; done
+# Font roots differ per distro (Arch: /usr/share/fonts/TTF, Debian: /usr/share/fonts/{truetype,opentype}),
+# filenames differ too (Cantarell ships as one variable font here, static Regular/Bold there), and a
+# silent miss produces a theme with no fonts at all — so glob across the roots and, on failure, print
+# what is actually installed instead of guessing again.
+cantarell() { # $1 = filename glob
+  for d in /usr/share/fonts/cantarell /usr/share/fonts/truetype/cantarell \
+           /usr/share/fonts/opentype/cantarell /usr/share/fonts/OTF /usr/local/share/fonts; do
+    for f in "$d"/$1; do
+      [ -f "$f" ] && { printf '%s\n' "$f"; return 0; }
+    done
+  done
   return 1
 }
-VF=$(find_font /usr/share/fonts/cantarell/Cantarell-VF.otf \
-              /usr/share/fonts/truetype/cantarell/Cantarell-VF.otf \
-              /usr/share/fonts/opentype/cantarell/Cantarell-VF.otf) || VF=""
-CANT_REG=$(find_font /usr/share/fonts/cantarell/Cantarell-Regular.otf \
-                    /usr/share/fonts/truetype/cantarell/Cantarell-Regular.otf) || CANT_REG=""
-CANT_BOLD=$(find_font /usr/share/fonts/cantarell/Cantarell-Bold.otf \
-                     /usr/share/fonts/truetype/cantarell/Cantarell-Bold.otf) || CANT_BOLD=""
-DEJAVU=$(find_font /usr/share/fonts/TTF/DejaVuSans.ttf \
-                   /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf) || DEJAVU=""
-[ -n "$DEJAVU" ] || { echo "build-assets: DejaVuSans.ttf not found (install fonts-dejavu-core)" >&2; exit 1; }
+anywhere() { # $1 = filename glob, searched over every font root
+  for f in /usr/share/fonts/*/$1 /usr/share/fonts/*/*/$1 /usr/local/share/fonts/$1; do
+    [ -f "$f" ] && { printf '%s\n' "$f"; return 0; }
+  done
+  return 1
+}
+VF=$(cantarell 'Cantarell-VF.[ot]tf') || VF=""
+CANT_REG=$(cantarell 'Cantarell-Regular.[ot]tf') || CANT_REG=""
+CANT_BOLD=$(cantarell 'Cantarell-Bold.[ot]tf') || CANT_BOLD=""
+DEJAVU=$(anywhere 'DejaVuSans.ttf') || DEJAVU=""
+
+report_missing() {
+  echo "build-assets: $1 not found. Installed font files matching the project's needs:" >&2
+  ls /usr/share/fonts/*/cantarell/ /usr/share/fonts/*/*/cantarell/ 2>/dev/null >&2 || echo "  (no cantarell directory)" >&2
+  ls /usr/share/fonts/*/dejavu/ /usr/share/fonts/*/*/dejavu/ 2>/dev/null >&2 || echo "  (no dejavu directory)" >&2
+}
+[ -n "$DEJAVU" ] || { report_missing "DejaVuSans.ttf (install fonts-dejavu-core)"; exit 1; }
 
 # No -n: grub-mkfont derives "<Family> <Style> <Size>" from the font itself, which is the
 # name GRUB looks up. Passing -n sets the *family*, and every lookup then misses to Unifont.
@@ -172,7 +185,7 @@ elif [ -n "$CANT_REG" ] && [ -n "$CANT_BOLD" ]; then
   grub-mkfont -s 24    -o "$DIR/cantarell_regular_24.pf2" "$CANT_REG"
   grub-mkfont -s 19    -o "$DIR/cantarell_regular_19.pf2" "$CANT_REG"
 else
-  echo "build-assets: neither Cantarell-VF.otf nor Cantarell Regular+Bold found (install fonts-cantarell)" >&2
+  report_missing "Cantarell (install fonts-cantarell)"
   exit 1
 fi
 # glyph fallback so @KEYMAP@ hints and any stray arrow never render as tofu

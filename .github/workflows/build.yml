@@ -15,6 +15,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends librsvg2-bin imagemagick grub-common fonts-cantarell
+          # print where the fonts actually landed: font packaging differs per distro, and the build
+          # discovers them by glob, so the layout belongs in the log rather than in a guess
+          ls -d /usr/share/fonts/*/cantarell /usr/share/fonts/*/*/cantarell 2>/dev/null || true
+          ls /usr/share/fonts/*/cantarell/ /usr/share/fonts/*/*/cantarell/ 2>/dev/null || true
 
       - name: Build every generated asset
         run: bash theme/build-assets.sh
