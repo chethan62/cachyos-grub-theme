@@ -140,9 +140,17 @@ def main() -> int:
                                  (ROOT / "tools" / "grub-menu-patches").read_text()))
         win = re.findall(r"--class ([a-z0-9-]+)", (ROOT / "install" / "12_windows").read_text())
         classes |= set(win[:1])
-        missing_icons = sorted(c for c in classes if not (THEME / "icons" / f"{c}.png").exists())
+        # cachyos/linux are copied from the installed distro theme at build time, so a bare CI box has
+        # no way to produce them; the four this repo draws must always be there.
+        STOCK = {"cachyos", "linux"}
+        missing_icons = sorted(c for c in classes
+                               if c not in STOCK and not (THEME / "icons" / f"{c}.png").exists())
+        absent_stock = sorted(c for c in classes & STOCK
+                              if not (THEME / "icons" / f"{c}.png").exists())
         check(not missing_icons, "every --class the scripts add resolves to an icon file",
               f"missing: {missing_icons}" if missing_icons else f"{sorted(classes)}")
+        if absent_stock:
+            print(f"     (stock-drawn icons not on this machine: {absent_stock} — expected off-CachyOS)")
 
         rc, _ = run("verify")
         check(rc == 1, "verify reports the unpatched tree as incomplete")
