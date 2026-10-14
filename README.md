@@ -109,6 +109,48 @@ menu and its `EFI Hard Drive` fallback are always still there.
 If the menu is unusable *at boot*: the snapshots submenu boots a pre-update system, the firmware boot
 menu still lists the `EFI Hard Drive` fallback, and a live USB always works.
 
+## How to boot if the menu is unusable
+
+In order of effort. On this machine's firmware (`efibootmgr`, 2026-10): `0002 CachyOS` →
+`\EFI\cachyos\grubx64.efi` (that is GRUB again), `0003 Windows 11` → Windows' own loader, `0000 EFI
+Hard Drive` → the fallback copy of GRUB. **Only the Windows entry bypasses GRUB**, so it is the one
+firmware route that works when GRUB itself will not start.
+
+1. **`Press any key to continue…`** → press Enter or space. GRUB then draws its built-in menu with
+   every entry listed; boot normally from there.
+2. **Plain/unthemed menu** → fully usable: ↑/↓ then Enter. Nothing to repair in order to boot.
+3. **Only Windows is needed** → reboot, press **F12** (Legion boot menu), pick `Windows 11`.
+4. **GRUB's `grub>` prompt** (what a config it cannot parse leaves you at) → boot CachyOS by hand.
+   These UUIDs are this machine's: btrfs root `5bb50285-d467-4766-8a59-6d1eefe8df60` (subvol `@`,
+   at the filesystem top level), Windows ESP `F0E7-FD1E`.
+
+   ```
+   search --no-floppy --fs-uuid --set=root 5bb50285-d467-4766-8a59-6d1eefe8df60
+   linux /@/boot/vmlinuz-linux-cachyos root=UUID=5bb50285-d467-4766-8a59-6d1eefe8df60 rw rootflags=subvol=@ nowatchdog nvme_load=YES
+   initrd /@/boot/initramfs-linux-cachyos.img
+   boot
+   ```
+
+   (drop `splash loglevel=3` from the normal line so the boot is visible; use
+   `vmlinuz-linux-cachyos-lts` + its initramfs if the main kernel is the problem.) Windows from the
+   same prompt:
+
+   ```
+   search --no-floppy --fs-uuid --set=root F0E7-FD1E
+   chainloader /EFI/Microsoft/Boot/bootmgfw.efi
+   boot
+   ```
+
+5. **Live USB** — the only route that can *repair* the install:
+
+   ```
+   cachy-chroot                                  # on the CachyOS ISO: mounts root + ESP for you
+   # by hand: mount -o subvol=@ /dev/nvme0n1p2 /mnt && mount /dev/nvme0n1p1 /mnt/boot/efi
+   grub-mkconfig -o /boot/grub/grub.cfg
+   ```
+
+   To go back to the stock menu instead, `cp /etc/default/grub.bak-theme /etc/default/grub` first.
+
 ## Layout
 
 | Path | What |
