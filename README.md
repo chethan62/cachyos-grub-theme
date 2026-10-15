@@ -1,5 +1,7 @@
 # cachyos-pro — a GRUB boot menu you can verify without rebooting
 
+[![license: MIT](https://img.shields.io/github/license/chethan62/cachyos-grub-theme)](LICENSE)
+
 A themed, upgrade-safe GRUB boot menu for a CachyOS + Windows 11 dual-boot, plus a harness that
 renders the real menu in a throwaway QEMU boot so every layout claim below is a measurement rather
 than an opinion.
@@ -220,7 +222,8 @@ firmware route that works when GRUB itself will not start.
 
 ## Licensing
 
-- **Code and theme: MIT** (see `LICENSE`).
+- **Code and theme: [MIT](LICENSE)** — the licence text is the verbatim MIT text, so the host detects
+  it as MIT rather than `NOASSERTION`.
 - **Brand icons are not redistributed.** `build-assets.sh` reads `cachyos.png` and `linux.png` (Tux)
   from the *installed* stock CachyOS theme at build time; a machine without it still builds and simply
   shows no icon on those rows. The Windows, firmware and snapshot glyphs are drawn in this repo.
