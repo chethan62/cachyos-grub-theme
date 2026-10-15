@@ -56,10 +56,17 @@ install -m755 "$TOOLS/grub-menu-patches" /usr/local/bin/grub-menu-patches
 /usr/local/bin/grub-menu-patches apply
 # boot the last-used OS: GRUB_DEFAULT=saved + GRUB_SAVEDEFAULT=true is the supported pair
 # (grub-mkconfig exports GRUB_SAVEDEFAULT; 00_header maps saved -> ${saved_entry})
-sed -i "s/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/" /etc/default/grub
-grep -q '^GRUB_SAVEDEFAULT=' /etc/default/grub \
-  && sed -i "s/^GRUB_SAVEDEFAULT=.*/GRUB_SAVEDEFAULT=true/" /etc/default/grub \
-  || printf "GRUB_SAVEDEFAULT=true\n" >> /etc/default/grub
+# ...but only where GRUB can actually write the env block. On btrfs the 1 KB grubenv lands as an
+# inline extent with no block list, so save_env fails ("sparse file not allowed",
+# loadenv.c check_blocklists) and every boot halts at "Press any key to continue".
+if [ "$(findmnt -no FSTYPE -T /boot/grub/grubenv 2>/dev/null)" = btrfs ]; then
+  sed -i "s/^GRUB_DEFAULT=.*/GRUB_DEFAULT=0/; s/^GRUB_SAVEDEFAULT=.*/GRUB_SAVEDEFAULT=false/" /etc/default/grub
+else
+  sed -i "s/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/" /etc/default/grub
+  grep -q '^GRUB_SAVEDEFAULT=' /etc/default/grub \
+    && sed -i "s/^GRUB_SAVEDEFAULT=.*/GRUB_SAVEDEFAULT=true/" /etc/default/grub \
+    || printf "GRUB_SAVEDEFAULT=true\n" >> /etc/default/grub
+fi
 grep -E "^GRUB_DEFAULT=|^GRUB_SAVEDEFAULT=" /etc/default/grub
 # the snapshot submenu held 100 rows (50 pre + 50 post, x2 kernels). A post snapshot of the
 # previous transaction is what the matching pre snapshot contained, so dropping "pre" halves the
