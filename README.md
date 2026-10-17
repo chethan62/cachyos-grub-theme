@@ -153,7 +153,7 @@ fallback are always still there.
 | Icons missing, or uneven sizes on some rows | a `/etc/grub.d` patch lost (grub upgraded without the hook), or `grub.cfg` not regenerated | `grub-menu-patches verify`, then `sudo grub-mkconfig -o /boot/grub/grub.cfg` |
 | A row appears twice | a backup file left inside `/etc/grub.d` — grub-mkconfig runs every executable `[0-9][0-9]_*` | the installer migrates them to `/var/backups/`; `tests/check.py` fails on any |
 | Menu appears but the countdown never ends | `GRUB_TIMEOUT` is `-1` (the capture phases set that) | set `GRUB_TIMEOUT='3'` and regenerate |
-| Boots the other OS by default | `GRUB_DEFAULT=saved` remembers the last boot | `sudo grub-editenv /boot/grub/grubenv unset saved_entry` (or `GRUB_DEFAULT=0`) |
+| Boots a different entry than you expect | `GRUB_DEFAULT=saved` (last-used-OS) — **not usable on btrfs**, see the gotcha below | stay on `GRUB_DEFAULT=0`, which is what the installer sets here |
 | Text console instead of the menu | `GRUB_GFXMODE` without a fallback list | keep the trailing `,1024x768,auto` |
 | Want none of it | | `sudo bash install/rollback.sh --apply` |
 
@@ -267,6 +267,11 @@ substitution as a note instead of a failure.
   `[0-9][0-9]_*` glob and produced a second "Windows 11". Backups go to `/var/backups/`.
 - **Generators need grub-mkconfig's own shell.** They use `grub_quote` from `grub-mkconfig_lib`; run as
   a child process they emit nothing, which looks exactly like "this generator has nothing to say".
+- **Last-used-OS does not work when `/boot` is btrfs.** `GRUB_DEFAULT=saved` needs GRUB to *write*
+  `grubenv`, and the btrfs driver cannot: the 1 KB env file lands as an inline extent with no block
+  list, so `save_env` fails with "sparse file not allowed" and the boot halts at "Press any key to
+  continue". The installer therefore forces `GRUB_DEFAULT=0` + `GRUB_SAVEDEFAULT=false` when
+  `findmnt -T /boot/grub/grubenv` reports btrfs — the check is deliberate, not a leftover.
 - **Right-aligning the submenu `▶` is impossible.** GRUB 2.16's theme format has no submenu-indicator
   property; the marker is part of the label string, so its x position drifts with the title length.
 
