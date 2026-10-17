@@ -56,7 +56,7 @@ channel — the theme is exercised exactly as it renders on the machine, with no
 
 ## What the menu contains
 
-Six top-level rows: `CachyOS Linux` · `Advanced options ▶` · `Windows 11` · `UEFI Firmware Settings` ·
+Five top-level rows: `CachyOS Linux` · `Advanced options ▶` · `Windows 11` · `UEFI Firmware Settings` ·
 `CachyOS Linux snapshots ▶`.
 
 - **Advanced options** holds 4 rows — both kernels, each with a `(recovery mode)` twin. Those boot
@@ -94,7 +94,7 @@ What a successful run looks like, in order:
 == 2/5 ... cachyos-pro assets rebuilt
 == 3/5 ... GRUB_THEME='…/cachyos-pro/theme.txt'  grub.cfg syntax OK — installed
 == 4/5 ... render-*.png frames (a refusal here means nothing was changed)
-== 5/5 ... installed theme matches the sources   generated cfg: classes=[…] markers 1/1 saved_entry 4
+== 5/5 ... installed theme matches the sources   generated cfg: classes=[…] markers 1/1 saved_entry 0 (GRUB_DEFAULT=0 on btrfs)
           icon resolution      → 5 rows, all icon=yes
           duplicate-entry audit → Windows entries the generators produce: 1 (must be 1)
 ```

@@ -16,6 +16,18 @@ pkgdatadir=${pkgdatadir:-/usr/share/grub}
 export -f grub_quote gettext_printf 2>/dev/null
 GRUB_DISTRIBUTOR=$(sed -n 's/^GRUB_DISTRIBUTOR="\?\([^"]*\)"\?.*/\1/p' /etc/default/grub | tail -1)
 export GRUB_DISTRIBUTOR=${GRUB_DISTRIBUTOR:-CachyOS}
+# ONE collection path, used by both the listing and the duplicate check. Two copies of this logic is
+# how the duplicate check ended up seeing nothing: a re-implemented fallback blanked GRUB_DEVICE and
+# emitted entries with empty titles. A generator is a child if it is self-contained (it inherits the
+# exported helpers), otherwise it is sourced here so it can call the library's functions directly.
+collect() {
+  local out
+  out=$( bash "$1" 2>/dev/null )
+  if [ -z "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then
+    out=$( . "$1" 2>/dev/null )
+  fi
+  printf '%s\n' "$out"
+}
 printf '%-22s %s\n' "GENERATOR" "EMITS"
 for f in /etc/grub.d/[0-9][0-9]_*; do
   name=$(basename "$f")
@@ -27,10 +39,7 @@ for f in /etc/grub.d/[0-9][0-9]_*; do
   # the library's helpers (which only exist in this shell). Try the child first, then fall back to
   # sourcing — a generator that legitimately emits nothing ('nothing' is also the correct answer for
   # 41_snapshots-btrfs, which writes grub-btrfs.cfg instead of stdout) simply stays empty.
-  out=$( bash "$f" 2>/dev/null )
-  if [ -z "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then
-    out=$( . "$f" 2>/dev/null )
-  fi
+  out=$( collect "$f" )
   entries=$(printf '%s\n' "$out" | grep -c "^[[:space:]]*menuentry ")
   subs=$(printf '%s\n' "$out"      | grep -c "^[[:space:]]*submenu ")
   if [ "$entries" = 0 ] && [ "$subs" = 0 ]; then
@@ -54,6 +63,7 @@ fi
 echo
 echo "duplicate check: any name appearing more than once in the whole menu?"
 for f in /etc/grub.d/[0-9][0-9]_*; do
-  [ -x "$f" ] && bash "$f" 2>/dev/null | grep -oE "menuentry '[^']*'" | sed "s/menuentry //"
-done | sort | uniq -d | sed 's/^/  DUPLICATE: /'
+  [ -x "$f" ] || continue
+  collect "$f"
+done 2>/dev/null | grep -oE "menuentry '[^']+'" | sed "s/menuentry //" | sort | uniq -d | sed 's/^/  DUPLICATE: /'
 echo "  (no output above = no duplicates)"
