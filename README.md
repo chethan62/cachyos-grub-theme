@@ -40,10 +40,13 @@ Environment: Lenovo Legion 82AU (1920x1080), CachyOS, GRUB 2.16, Cantarell 48/24
 ## Verify it yourself
 
 ```bash
-bash theme/build-assets.sh      # regenerate every asset from source
-python3 tests/check.py          # assert the numbers above + the geometry invariants
-bash scripts/render-theme.sh    # boot it in QEMU and screenshot it (needs qemu + edk2-ovmf)
+bash scripts/verify.sh    # assets → measured numbers → installer logic → menu audit → QEMU render
 ```
+
+One verdict, and the exit code is the number of failed stages; the render stage skips itself when
+qemu/OVMF are absent, so the rest still runs. The individual entry points remain: `theme/build-assets.sh`
+(regenerate every asset from source), `tests/check.py` (the numbers above), `scripts/audit-menu.sh`
+(read-only menu inventory), `scripts/render-theme.sh` (boot it in QEMU and screenshot it).
 
 `tests/check.py` is the same script CI runs: it asserts the icon optical box, the geometry invariants
 (the countdown bar is *derived* from `menu_left + item_padding` and `menu_width - 2*item_padding`, so an
@@ -83,13 +86,16 @@ Idempotent. It installs the theme, restores `GRUB_TIMEOUT`/`GRUB_GFXMODE` (a sin
 fallback drops to a text console), applies the `/etc/grub.d` patches, installs the pacman hook, and
 regenerates `grub.cfg`.
 
-**`install/` is this machine's configuration, not a generic installer** — `install/12_windows`
-hardcodes the author's Windows ESP filesystem UUID (`F0E7-FD1E`) and `finish-theme.sh` writes to
-`/etc/default/grub`. Change the UUID for your own disk (`lsblk -o NAME,FSTYPE,UUID`) before running it.
+**`install/` is this machine's configuration, not a generic installer** — it writes `/etc/default/grub`,
+`/etc/grub.d` and the pacman hook directory. The Windows ESP is found automatically: the vfat partition
+that actually contains `\EFI\Microsoft\Boot\bootmgfw.efi`, read directly with mtools (no mount). If
+detection fails the UUID pinned in `install/12_windows` (`F0E7-FD1E` here) is used and a warning names
+the file to edit.
 
 What a successful run looks like, in order:
 
 ```
+Windows ESP auto-detected: F0E7-FD1E (the vfat partition holding \EFI\Microsoft\Boot\bootmgfw.efi)
 == 1/5 ... 12_windows already current            (or "refreshed", or "moved stray …")
 == 2/5 ... cachyos-pro assets rebuilt
 == 3/5 ... GRUB_THEME='…/cachyos-pro/theme.txt'  grub.cfg syntax OK — installed
@@ -107,13 +113,13 @@ generated config has passed `grub-script-check`.
 
 ```bash
 git clone https://github.com/chethan62/cachyos-grub-theme && cd cachyos-grub-theme
-lsblk -o NAME,FSTYPE,UUID | grep -i vfat     # find YOUR Windows ESP UUID
-$EDITOR install/12_windows                   # put it in the fs-uuid line
-sudo bash install/finish-theme.sh            # then reboot
+sudo bash install/finish-theme.sh            # finds the Windows ESP itself, then reboot
 ```
 
-The installer refuses to guess: if the UUID in `12_windows` is not on the machine it says so and tells
-you how to list them. Anything it replaces is backed up to `/var/backups/cachyos-grub-theme/`.
+It prints `Windows ESP auto-detected: <UUID>` when it finds the partition holding the Windows loader.
+If it prints `no Windows ESP auto-detected`, install `mtools` and re-run — or put your own UUID in
+`install/12_windows` (`lsblk -o NAME,FSTYPE,UUID | grep -i vfat` lists candidates). Anything it
+replaces is backed up to `/var/backups/cachyos-grub-theme/`.
 
 **Undo — dry run first, then apply:**
 
@@ -238,6 +244,8 @@ substitution as a note instead of a failure.
 | `scripts/qemu-verify.sh` | end-to-end check of the **installed** theme: boots the real disk read-only and screenshots the menu |
 | `install/` | this machine's installer, `rollback.sh`, `12_windows`, `12_memtest`, and the pacman hook |
 | `docs/` | research notes + the GRUB theme-format reference |
+| `scripts/verify.sh` | every check in one command: assets, numbers, installer logic, menu audit, render |
+| `tests/test-detect-esp.sh` | checks the installer's Windows-ESP detection against synthetic FAT images |
 | `tests/check.py` | the checks CI runs |
 
 </details>

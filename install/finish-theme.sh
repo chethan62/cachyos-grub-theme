@@ -81,23 +81,44 @@ for kv in 'GRUB_BTRFS_LIMIT="10"' 'GRUB_BTRFS_IGNORE_SNAPSHOT_TYPE=("pre")'; do
 done
 grep -E "^GRUB_BTRFS_LIMIT|^GRUB_BTRFS_IGNORE_SNAPSHOT_TYPE" /etc/default/grub-btrfs/config
 install -m755 "$INST/12_memtest" /etc/grub.d/12_memtest
-# Windows entry: install it only when one is missing, so a local edit (a different ESP UUID) is never
-# clobbered — and check the UUID it pins actually exists on a partition, because a stale UUID means a
-# menu entry that cannot boot Windows.
+# Windows entry. The repo copy pins this machine's ESP UUID, so look for the real one first: a vfat
+# partition that actually contains Windows' loader is the ESP, and mtools reads it without mounting
+# (mdir against the block device). That removes the only hand edit a fresh clone needed.
+detect_windows_esp() {
+  command -v mdir >/dev/null 2>&1 || return 1
+  for dev in $(lsblk -rno PATH,FSTYPE | awk '$2=="vfat"{print $1}'); do
+    if mdir -i "$dev" ::/EFI/Microsoft/Boot/bootmgfw.efi >/dev/null 2>&1; then
+      blkid -s UUID -o value "$dev"
+      return 0
+    fi
+  done
+  return 1
+}
+WIN_SRC=$INST/12_windows
+if WIN_UUID=$(detect_windows_esp 2>/dev/null) && [ -n "$WIN_UUID" ]; then
+  WIN_GEN=$(mktemp)
+  sed -E "s/[0-9a-fA-F]{4}-[0-9a-fA-F]{4}/$WIN_UUID/g" "$INST/12_windows" > "$WIN_GEN"
+  WIN_SRC=$WIN_GEN
+  echo "Windows ESP auto-detected: $WIN_UUID (the vfat partition holding \\EFI\\Microsoft\\Boot\\bootmgfw.efi)"
+else
+  echo "note: no Windows ESP auto-detected (mtools missing, or no such partition) — using the UUID in"
+  echo "      install/12_windows; edit it for this machine if the warning below appears"
+fi
 if [ ! -f /etc/grub.d/12_windows ]; then
-  install -m755 "$INST/12_windows" /etc/grub.d/12_windows
-  echo "12_windows installed (check the ESP UUID matches this machine)"
-elif cmp -s "$INST/12_windows" /etc/grub.d/12_windows; then
+  install -m755 "$WIN_SRC" /etc/grub.d/12_windows
+  echo "12_windows installed"
+elif cmp -s "$WIN_SRC" /etc/grub.d/12_windows; then
   echo "12_windows already current"
 else
-  # an older revision lacked the --class that lets the row resolve an icon. Back it up OUTSIDE
-  # /etc/grub.d: a backup in there is itself a menu generator (grub-mkconfig runs every executable
-  # file matching [0-9][0-9]_*, so "12_windows.bak" produced a SECOND "Windows 11" entry).
+  # an older revision lacked the --class that lets the row resolve an icon, or pinned another UUID.
+  # Back it up OUTSIDE /etc/grub.d: a backup in there is itself a menu generator (grub-mkconfig runs
+  # every executable file matching [0-9][0-9]_*, so "12_windows.bak" produced a SECOND "Windows 11").
   mkdir -p /var/backups/cachyos-grub-theme
   cp -f /etc/grub.d/12_windows /var/backups/cachyos-grub-theme/12_windows.bak
-  install -m755 "$INST/12_windows" /etc/grub.d/12_windows
+  install -m755 "$WIN_SRC" /etc/grub.d/12_windows
   echo "12_windows refreshed (previous copy kept at /var/backups/cachyos-grub-theme/12_windows.bak)"
 fi
+[ -n "${WIN_GEN:-}" ] && rm -f "$WIN_GEN"
 # Migrate any backup an earlier revision left inside /etc/grub.d — each one is a duplicate entry.
 for stray in /etc/grub.d/*.bak /etc/grub.d/*~ /etc/grub.d/*.old /etc/grub.d/*.orig /etc/grub.d/*.save; do
   [ -e "$stray" ] || continue
@@ -121,6 +142,7 @@ Operation = Install
 Operation = Upgrade
 Type = Package
 Target = grub
+Target = grub-btrfs
 
 [Action]
 Description = Re-disabling 31_efi_bootnext, re-applying the boot-menu patches, regenerating grub.cfg...
