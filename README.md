@@ -100,7 +100,7 @@ Windows ESP auto-detected: F0E7-FD1E (the vfat partition holding \EFI\Microsoft\
 == 2/5 ... cachyos-pro assets rebuilt
 == 3/5 ... GRUB_THEME='…/cachyos-pro/theme.txt'  grub.cfg syntax OK — installed
 == 4/5 ... render-*.png frames (a refusal here means nothing was changed)
-== 5/5 ... installed theme matches the sources   generated cfg: classes=[…] markers 1/1 saved_entry 0 (GRUB_DEFAULT=0 on btrfs)
+== 5/5 ... installed theme matches the sources   generated cfg: classes=[…] markers 1/1 saved_entry refs=<n>
           icon resolution      → 5 rows, all icon=yes
           duplicate-entry audit → Windows entries the generators produce: 1 (must be 1)
 ```
@@ -108,6 +108,11 @@ Windows ESP auto-detected: F0E7-FD1E (the vfat partition holding \EFI\Microsoft\
 Any line reading `MISSING`, `STRAY`, `DRIFT`, `icon=MISSING`, or a count that is not `1` is a real
 problem, and the line itself names the file to look at. Nothing is written to `grub.cfg` until the
 generated config has passed `grub-script-check`.
+
+Informational, not pass/fail: `saved_entry refs=<n>` counts grub-mkconfig's env plumbing and varies
+with your entries (it is not evidence that last-used-OS works — see the btrfs gotcha), and the three
+`WARNING: unsupported font feature parameters: 6` lines from `grub-mkfont` are expected on the variable
+Cantarell font; the fonts do render, as the frames show.
 
 **From scratch, on a different machine:**
 
